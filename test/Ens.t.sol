@@ -20,11 +20,50 @@ contract EnsTest is Test {
 
     ENS internal ens;
     address internal user;
+    uint88 internal ensPrice = 1e18;
 
     function setUp() public {
-        ens = new ENS(msg.sender, 1e18);
+        ens = new ENS(msg.sender, ensPrice, 100);
         user = address(uint160(uint256(keccak256("user"))));
         vm.deal(user, 1000e18);
+    }
+
+    function test_RegisterUser() public {
+        registerUser("name", 10);
+
+        address _addr = ens.getAddress("name");
+        assertEq(_addr, address(this));
+    }
+
+    function test_Register_TheSameDomainNameAfterExpiration() public {
+        vm.warp(1641070800);
+        string memory name = "name";
+        registerUser(name, 10);
+        console.log(ens.getAddress(name));
+
+        uint256 timeToSkip = block.timestamp + (31536000 * 11);
+        vm.warp(timeToSkip);
+
+        vm.prank(user);
+        registerUser(name, 10);
+        console.log(ens.getAddress(name));
+    }
+
+    function test_RegDom_RevetIf_DomainName_IsTaken() public {
+        vm.warp(1641070800);
+        string memory name = "name";
+        registerUser(name, 10);
+
+        vm.expectRevert(AlreadyRegistered.selector);
+        vm.prank(user);
+        registerUser(name, 10);
+    }
+
+    function testFuzz_ContractBalanceAfterRegistration(uint96 time) public {
+        vm.assume(time < 10 && time > 0);
+        registerUser("name", time);
+
+        assertEq(ens.contractBalance(), ensPrice * time);
     }
 
     function testFuzz_RegDom_RevertIf_OOB(uint96 amount) public {
@@ -45,19 +84,14 @@ contract EnsTest is Test {
         ens.registerDomain{value: price}("name", time);
     }
 
-    function testRegisterUser() public {
-        registerUser("name");
-
-        address _addr = ens.getAddress("name");
-        assertEq(_addr, address(this));
-    }
-
     function testFuzz_Register_TheSameDomainNameAfterExpiration(
-        uint96 amount
+        uint96 amount,
+        uint96 time
     ) public {
+        vm.assume(time > 0 && time < 10);
         vm.warp(1641070800);
         string memory name = "name";
-        registerUser(name);
+        registerUser(name, time);
         console.log(ens.getAddress(name));
 
         vm.assume(amount > 10 && amount < 10000000);
@@ -65,11 +99,11 @@ contract EnsTest is Test {
         vm.warp(timeToSkip);
 
         vm.prank(user);
-        registerUser(name);
+        registerUser(name, time);
         console.log(ens.getAddress(name));
     }
 
-    function registerUser(string memory name) public {
-        ens.registerDomain{value: 1e18 * 10}(name, 10);
+    function registerUser(string memory name, uint256 time) public {
+        ens.registerDomain{value: 1e18 * time}(name, time);
     }
 }
