@@ -23,7 +23,7 @@ contract EnsTest is Test {
     uint88 internal ensPrice = 1e18;
 
     function setUp() public {
-        ens = new ENS(msg.sender, ensPrice, 100);
+        ens = new ENS(msg.sender, ensPrice, 1000);
         user = address(uint160(uint256(keccak256("user"))));
         vm.deal(user, 1000e18);
     }
@@ -33,6 +33,22 @@ contract EnsTest is Test {
 
         address _addr = ens.getAddress("name");
         assertEq(_addr, address(this));
+    }
+
+    function test_ExtendDuration() public {
+        vm.warp(1641070800);
+        registerUser("name", 10);
+
+        uint256 timeToSkip = block.timestamp + (31536000 * 9);
+        vm.warp(timeToSkip);
+
+        // extend by 10 more years
+        // the price is (pricePerYear * time * basisPoints) / BP_MAX
+        // (1e18 * 10 * 1000) / 10000 = 1e18
+        // price for new domain is 10e18
+        ens.updateDomainDuration{value: 1e18}("name", 10);
+
+        assertEq(ens.getEndTime("name"), (block.timestamp + 10 * 31536000));
     }
 
     function test_Register_TheSameDomainNameAfterExpiration() public {
@@ -49,7 +65,7 @@ contract EnsTest is Test {
         console.log(ens.getAddress(name));
     }
 
-    function test_RegDom_RevetIf_DomainName_IsTaken() public {
+    function test_RegDom_RevetsIf_DomainName_IsTaken() public {
         vm.warp(1641070800);
         string memory name = "name";
         registerUser(name, 10);
@@ -59,6 +75,24 @@ contract EnsTest is Test {
         registerUser(name, 10);
     }
 
+    function testFuzz_ExtendDuration_RevertsIf_IncorrectAmount(
+        uint96 amount
+    ) public {
+        vm.warp(1641070800);
+        registerUser("name", 10);
+
+        uint256 timeToSkip = block.timestamp + (31536000 * 9);
+        vm.warp(timeToSkip);
+
+        // extend by 10 more years
+        // the price is (pricePerYear * time * basisPoints) / BP_MAX
+        // price to extend: (1e18 * 10 * 1000) / 10000 = 1e18
+        // price for new domain would be 10e18
+        vm.assume(amount < 1e18);
+        vm.expectRevert(IncorrectAmount.selector);
+        ens.updateDomainDuration{value: amount}("name", 10);
+    }
+
     function testFuzz_ContractBalanceAfterRegistration(uint96 time) public {
         vm.assume(time < 10 && time > 0);
         registerUser("name", time);
@@ -66,7 +100,7 @@ contract EnsTest is Test {
         assertEq(ens.contractBalance(), ensPrice * time);
     }
 
-    function testFuzz_RegDom_RevertIf_OOB(uint96 amount) public {
+    function testFuzz_RegDom_RevertsIf_OOB(uint96 amount) public {
         vm.assume(amount > 10);
         vm.expectRevert(OutOfBounds.selector);
         ens.registerDomain("name", amount);
@@ -74,7 +108,7 @@ contract EnsTest is Test {
         ens.registerDomain("name", 0);
     }
 
-    function testFuzz_RegDom_RevertIf_IncorrectPrice(
+    function testFuzz_RegDom_RevertsIf_IncorrectPrice(
         uint96 price,
         uint96 time
     ) public {
